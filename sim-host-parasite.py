@@ -431,7 +431,6 @@ def _recurse_newick(out, nd, anc, name_pref):
 class BaseTree(object):
     def newick(self, out, name_pref):
         global CURR_TIME
-        print str(self.tips)
         for t in self.tips:
             nd = t
             if nd.death_time is None:
@@ -572,6 +571,19 @@ class ParasiteTree(BaseTree):
         self.tips.remove(tip)
         for loc in tip.geo_range:
             loc.remove_parasite(tip)
+    def associations(self, out, hpref, ppref):
+        for t in self.tips:
+            out.write('{p}{i:d}\t'.format(p=ppref, i=t.index))
+            hs = set()
+            for loc in t.geo_range:
+                hs.update(loc.get_hosts_for_para(t))
+            hl = [i.index for i in hs]
+            hl.sort()
+            for n, h in enumerate(hl):
+                if n > 0:
+                    out.write(' ')
+                out.write('{p}{i:d}'.format(p=hpref, i=h))
+            out.write('\n')
 
 def sanity_check(para_list, host_list):
     global GRID
@@ -652,12 +664,12 @@ def main(h_rng, p_rng, num_hosts):
     h_tree = HostTree(start_time=0, initial_range=init_range, rng=h_rng)
     p_tree = ParasiteTree(start_time=0, initial_range=init_range, host=h_tree.root, rng=p_rng)
 
-    GRID.write_range(errstream, init_range)
+    if DEBUGGING_OUTPUT:
+        GRID.write_range(errstream, init_range)
     for CURR_TIME in range(1, max_t):
-        print CURR_TIME, len(h_tree.tips), len(p_tree.tips), 'in', len(list(p_tree.tips)[0].geo_range), 'locations'
-
+        CURR_TIME + len(h_tree.tips), len(p_tree.tips)
         to_speciate = set()
-        print_ranges = False # (len(h_tree.tips) == 1)
+        print_ranges = DEBUGGING_OUTPUT and (len(h_tree.tips) == 1)
         if print_ranges:
             for t in h_tree.tips:
                 errstream.write('Before speciation\n')
@@ -730,7 +742,7 @@ if __name__ == '__main__':
     p_seed = int(sys.argv[2])
     print h_seed, p_seed
 
-    NUM_HOSTS = 5
+    NUM_HOSTS = 50
     # Tube is GRID_LENGTH on each side, and GRID_LENGTH top to bottom
     GRID_LENGTH = 32
 
@@ -764,10 +776,7 @@ if __name__ == '__main__':
 
     out = sys.stdout
     h_tree.newick(out, 'h')
-    '''p_tree.newick(out, 'p')
-    p_tree.associations(out)
-    #t = treesim.birth_death(birth_rate=1.0, death_rate=0.5, ntax=num_hs, rng=rng)
+    p_tree.newick(out, 'p')
+    p_tree.associations(out, 'h', 'p')
 
-    #t.print_plot(plot_metric='length')
-    '''
 
