@@ -65,11 +65,11 @@ class Locality(object):
         if not p_set:
             del self._h2p[h]
             h.geo_range.remove(self)
-        h_set = self._p2h[p]
+        h_set = self._p2h[para]
         h_set.remove(h)
         if not h_set:
-            del self._p2h[p]
-            p.geo_range.remove(self)
+            del self._p2h[para]
+            para.geo_range.remove(self)
     def remove_host_if_present(self, h):
         if h in self._h2p:
             self.remove_host(h)
@@ -188,7 +188,6 @@ class Grid(object):
             for y in range(c_y + 1, end_y):
                 c = self.get(x, y)
                 if (c.north in r) or (c.west in r):
-                    #print 'ySE', c
                     if h_rng.random() < inc_prob:
                         r.add(c)
         # NE quadrant
@@ -196,7 +195,6 @@ class Grid(object):
             for y in range(c_y, min_y -1, -1):
                 c = self.get(x, y)
                 if (c.south in r) or (c.west in r):
-                    #print 'yNE', c
                     if h_rng.random() < inc_prob:
                         r.add(c)
         # SW quadrant
@@ -204,7 +202,6 @@ class Grid(object):
             for y in range(c_y + 1, end_y):
                 c = self.get(x, y)
                 if (c.north in r) or (c.east in r):
-                    #print 'ySW', c
                     if h_rng.random() < inc_prob:
                         r.add(c)
         # NE quadrant
@@ -212,7 +209,6 @@ class Grid(object):
             for y in range(c_y, min_y-1, -1):
                 c = self.get(x, y)
                 if (c.south in r) or (c.east in r):
-                    #print 'yNE', c
                     if h_rng.random() < inc_prob:
                         r.add(c)
         return r
@@ -239,17 +235,6 @@ class Grid(object):
                     o.write(absence)
             o.write(side_border + '\n')
         o.write(unichr(0x255A) + (self.width*m)*horiz_border + unichr(0x255D) + '\n')
-
-class BaseLineage(object):
-    def __init__(self, start_time, parent):
-        self.birth_time = start_time
-        self.death_time = None
-        self.parent = parent
-        if parent:
-            parent.children.append(self)
-        self.children = []
-    def __hash__(self):
-        return hash(self.index)
 
 def find_periphery(r):
     p = set()
@@ -284,6 +269,27 @@ def find_surrounding(r):
 
 _HOST_LINEAGE_COUNTER = 0
 _PARASITE_LINEAGE_COUNTER = 0
+
+class BaseLineage(object):
+    def __init__(self, start_time, parent):
+        self.birth_time = start_time
+        self.death_time = None
+        self.parent = parent
+        if parent:
+            parent.children.append(self)
+        self.children = []
+        self._on_extant_trace = False
+    def __hash__(self):
+        return hash(self.index)
+    def _get_des_extant_fork(self):
+        ec = [self]
+        while len(ec) == 1:
+            nd = ec[0]
+            ec = [i for i in nd.children if i._on_extant_trace]
+        return nd, ec
+
+
+
 class HostLineage(BaseLineage):
     def __init__(self, start_time, geo_range, parent=None):
         global _HOST_LINEAGE_COUNTER, CURR_TIME
@@ -406,10 +412,46 @@ class ParasiteLineage(BaseLineage):
                     if rng.random() < P_HOST_JUMP_PROB:
                         loc.add_para_for_h(h, [self])
         SANITY_CHECK()
-        
-class BaseTree(object):
-    pass
 
+def _recurse_newick(out, nd, anc, name_pref):
+    eob, next_c = nd._get_des_extant_fork()
+    if next_c:
+        out.write('(')
+        for n, c in enumerate(next_c):
+            if n != 0:
+                out.write(',')
+            _recurse_newick(out, c, eob, name_pref)
+        out.write(')')
+    else:
+        out.write('{p}{i:d},'.format(p=name_pref, i=eob.index))
+    if anc:
+        br_len = (eob.death_time - anc.death_time)
+        out.write(':{b:d}'.format(b=br_len))
+
+class BaseTree(object):
+    def newick(self, out, name_pref):
+        global CURR_TIME
+        print str(self.tips)
+        for t in self.tips:
+            nd = t
+            if nd.death_time is None:
+                nd.had_none_death_time = True
+                nd.death_time = CURR_TIME
+            while nd is not None:
+                debug('flagging {i:d} as on extant path '.format(i=nd.index))
+                nd._on_extant_trace = True
+                if nd.index == 0:
+                    assert(nd is self.root)
+                nd = nd.parent
+            assert(self.root._on_extant_trace == True)
+        assert(self.root.index == 0)
+        assert(self.root._on_extant_trace == True)
+        _recurse_newick(out, self.root, None, name_pref)
+        out.write(';\n')
+        for i in self.tips:
+            if getattr(t, 'had_none_death_time', None):
+                delattr(t, 'had_none_death_time')
+                t.death_time = None
 class HostTree(BaseTree):
     def __init__(self, start_time, initial_range, rng):
         self.root = HostLineage(start_time, initial_range)
@@ -423,7 +465,6 @@ class HostTree(BaseTree):
         tip.death_time = CURR_TIME
         self.tips.remove(tip)
         for t in self.tips:
-            print t, tip
             del t._mrca_times[tip]
         for loc in tip.geo_range:
             try:
@@ -597,42 +638,12 @@ def SANITY_CHECK():
         return True
     sanity_check(p_tree.tips, h_tree.tips)
 
-
-if __name__ == '__main__':
-    from random import Random
-    import sys
-    import codecs
-    import os
-    errstream = codecs.getwriter('utf-8')(sys.stderr)
-
-    h_seed = int(sys.argv[1])
-    p_seed = int(sys.argv[2])
-    print h_seed, p_seed
-
-    num_hosts = 100
-    # Tube is GRID_LENGTH on each side, and GRID_LENGTH top to bottom
-    GRID_LENGTH = 32
+def main(h_rng, p_rng, num_hosts):
+    global GRID, _HOST_LINEAGE_COUNTER, _PARASITE_LINEAGE_COUNTER, CURR_TIME
+    CURR_TIME = 0
     GRID = Grid(GRID_LENGTH, GRID_LENGTH)
-
-    H_SPECIATION_PROB = 0.01
-    H_LOCATION_EXTINCTION_PROB = 0.013
-    H_RANGE_EXPANSION_PROB = 0.003
-    H_PROB_PARA_SP_GIVEN_HOST_SP = 1.0 # Pr(parasite speciates | host speciates)
-    max_range_dim = 10
-    max_t = 10000
-
-    P_LOCATION_EXTINCTION_PROB = 0.01
-    P_RANGE_EXPANSION_PROB = 0.02
-    P_HOST_JUMP_PROB = 0.01
-
-    PHYLOGENETIC_HOST_JUMPS = False
-
-    DEBUGGING_OUTPUT = os.environ.get('DEBUGGING_OUTPUT', '0') != '0'
-    DOING_SANITY_CHECKS = os.environ.get('SANITY_CHECKS', '0') != '0'
-
-
-    h_rng = Random(h_seed)
-    p_rng = Random(p_seed)
+    _HOST_LINEAGE_COUNTER = 0
+    _PARASITE_LINEAGE_COUNTER = 0
 
     init_range = GRID.gen_rand_range(max_ns_extent=max_range_dim,
                                      max_ew_extent=max_range_dim,
@@ -646,7 +657,7 @@ if __name__ == '__main__':
         print CURR_TIME, len(h_tree.tips), len(p_tree.tips), 'in', len(list(p_tree.tips)[0].geo_range), 'locations'
 
         to_speciate = set()
-        print_ranges = (len(h_tree.tips) == 1)
+        print_ranges = False # (len(h_tree.tips) == 1)
         if print_ranges:
             for t in h_tree.tips:
                 errstream.write('Before speciation\n')
@@ -656,6 +667,12 @@ if __name__ == '__main__':
         for h_l in h_tree.tips:
             if h_rng.random() < H_SPECIATION_PROB:
                 to_speciate.add(h_l)
+        
+        # It is not great to stop at the first time
+        #   you were going to exceed the number of hosts, 
+        #   but this should work for our purposes...
+        if len(to_speciate) and (len(h_tree.tips) == num_hosts):
+            break
         for h_l in to_speciate:
             d1, d2 = h_tree.speciate(h_l)
             if False and print_ranges:
@@ -701,9 +718,56 @@ if __name__ == '__main__':
         if not p_tree.tips:
             break
         SANITY_CHECK()
-    print h_tree.tips
-    print p_tree.tips
+    return h_tree, p_tree
+if __name__ == '__main__':
+    from random import Random
+    import sys
+    import codecs
+    import os
+    errstream = codecs.getwriter('utf-8')(sys.stderr)
+
+    h_seed = int(sys.argv[1])
+    p_seed = int(sys.argv[2])
+    print h_seed, p_seed
+
+    NUM_HOSTS = 5
+    # Tube is GRID_LENGTH on each side, and GRID_LENGTH top to bottom
+    GRID_LENGTH = 32
+
+    H_SPECIATION_PROB = 0.01
+    H_LOCATION_EXTINCTION_PROB = 0.013
+    H_RANGE_EXPANSION_PROB = 0.003
+    H_PROB_PARA_SP_GIVEN_HOST_SP = 1.0 # Pr(parasite speciates | host speciates)
+    max_range_dim = 10
+    max_t = 10000
+
+    P_LOCATION_EXTINCTION_PROB = 0.01
+    P_RANGE_EXPANSION_PROB = 0.02
+    P_HOST_JUMP_PROB = 0.01
+
+    PHYLOGENETIC_HOST_JUMPS = False
+
+    DEBUGGING_OUTPUT = os.environ.get('DEBUGGING_OUTPUT', '0') != '0'
+    DOING_SANITY_CHECKS = os.environ.get('SANITY_CHECKS', '0') != '0'
+
+
+    h_rng = Random(h_seed)
+    p_rng = Random(p_seed)
+
+    
+    while True:
+        h_tree, p_tree = main(h_rng,
+                              p_rng,
+                              num_hosts=NUM_HOSTS)
+        if len(h_tree.tips) == NUM_HOSTS:
+            break
+
+    out = sys.stdout
+    h_tree.newick(out, 'h')
+    '''p_tree.newick(out, 'p')
+    p_tree.associations(out)
     #t = treesim.birth_death(birth_rate=1.0, death_rate=0.5, ntax=num_hs, rng=rng)
 
     #t.print_plot(plot_metric='length')
+    '''
 
