@@ -415,18 +415,23 @@ class ParasiteLineage(BaseLineage):
 
 def _recurse_newick(out, nd, anc, name_pref):
     eob, next_c = nd._get_des_extant_fork()
+    if anc:
+        br_len = (eob.death_time - anc.death_time)
     if next_c:
         out.write('(')
         for n, c in enumerate(next_c):
             if n != 0:
                 out.write(',')
             _recurse_newick(out, c, eob, name_pref)
-        out.write(')')
+        if anc:
+            out.write('):{b:d}'.format(b=br_len))
+        else:
+            out.write(')')
     else:
-        out.write('{p}{i:d},'.format(p=name_pref, i=eob.index))
-    if anc:
-        br_len = (eob.death_time - anc.death_time)
-        out.write(':{b:d}'.format(b=br_len))
+        if anc:
+            out.write('{p}{i:d}:{b:d}'.format(p=name_pref, i=eob.index, b=br_len))
+        else:
+            out.write('{p}{i:d}'.format(p=name_pref, i=eob.index))
 
 class BaseTree(object):
     def newick(self, out, name_pref):
@@ -511,6 +516,7 @@ class HostTree(BaseTree):
     def dispersal_speciate(self, tip):
         global CURR_TIME, GRID
         debug('host-dispersal-speciate')
+        assert(len(tip.geo_range) > 0)
         same_range_daughter = HostLineage(start_time=CURR_TIME,
                                           geo_range=tip.geo_range,
                                           parent=tip)
