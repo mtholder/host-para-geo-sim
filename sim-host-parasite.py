@@ -800,6 +800,8 @@ def main(h_rng, p_rng, num_hosts):
             p_tree.go_extinct(p)
         if not p_tree.tips:
             break
+        if len(p_tree.tips) > (ABORT_P_TIPS_MULTIPLIER * MAX_NUM_PARA):
+            break
         SANITY_CHECK()
     return h_tree, p_tree
 
@@ -820,6 +822,11 @@ if __name__ == '__main__':
         NUM_HOSTS = int(sys.argv[3])
         MIN_NUM_PARA = int(sys.argv[4])
         MAX_NUM_PARA = int(sys.argv[5])
+        # if the number of parasite species exceeds ABORT_P_TIPS_MULTIPLIER*MAX_NUM_PARA
+        #   that simulation rep will be aborted to save on computation on a replicate
+        #   that is very unlikely to produce a replicate with the constraints on the
+        #   number of parasite species.
+        ABORT_P_TIPS_MULTIPLIER = 10 
         if MIN_NUM_PARA > MAX_NUM_PARA:
             error('minimum # of parasites cannot be larger than maximum # parasites')
         assert(MIN_NUM_PARA <= MAX_NUM_PARA)
