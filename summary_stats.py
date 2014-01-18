@@ -52,8 +52,8 @@ def calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree):
             d = {}
             for n in v:
                 curr_nd = h_tree.find_node_with_taxon(lambda x: x == n)
-                while (curr_nd is not mrca_root) and (curr_nd.taxon not in d):
-                    d[curr_nd.taxon] = curr_nd.edge.length
+                while (curr_nd is not mrca_root) and (curr_nd not in d):
+                    d[curr_nd] = curr_nd.edge.length
                     curr_nd = curr_nd.parent_node
             s = sum([v for v in d.values()])
             t0 += s
@@ -81,6 +81,7 @@ for i in range(1,10):
         if e.head_node is not p_tree.seed_node:
             if (e.tail_node.age >= crit) and (e.head_node.age < crit):
                 h_lists_list.append(e.head_node.hts)
+    #h_lists_list=[h_taxa]
     tp = calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree)/h_len
     print 't{p:3.2f} = {s:f}'.format(p=proportion, s=tp)
 
