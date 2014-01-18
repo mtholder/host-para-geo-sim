@@ -1,10 +1,18 @@
 #!/usr/bin/env python
 
 _EMPTY_SET = frozenset()
+SILENT_MODE = False
 def debug(m):
     global DEBUGGING_OUTPUT
     if DEBUGGING_OUTPUT:
         sys.stderr.write('debug: ')
+        sys.stderr.write(m)
+        sys.stderr.write('\n')
+
+def warn(m):
+    global SILENT_MODE
+    if not SILENT_MODE:
+        sys.stderr.write('warn: ')
         sys.stderr.write(m)
         sys.stderr.write('\n')
 
@@ -62,9 +70,9 @@ class Locality(object):
     def remove_para_from_host(self, para, h):
         p_set = self._h2p[h]
         p_set.remove(para)
-        if not p_set:
-            del self._h2p[h]
-            h.geo_range.remove(self)
+        #if not p_set:
+        #    del self._h2p[h]
+        #    h.geo_range.remove(self)
         h_set = self._p2h[para]
         h_set.remove(h)
         if not h_set:
@@ -388,7 +396,7 @@ class ParasiteLineage(BaseLineage):
         for loc, h in to_del:
             SANITY_CHECK()
             loc.remove_para_from_host_if_present(self, h)
-            SANITY_CHECK()
+            SANITY_CHECK(False)
         p = find_surrounding(self.geo_range)
         added = []
         for k, v in p.items():
@@ -411,7 +419,7 @@ class ParasiteLineage(BaseLineage):
                 for h in close_enough_dest_host:
                     if rng.random() < P_HOST_JUMP_PROB:
                         loc.add_para_for_h(h, [self])
-        SANITY_CHECK()
+        SANITY_CHECK(False)
 
 def _recurse_newick(out, nd, anc, name_pref):
     eob, next_c = nd._get_des_extant_fork()
@@ -592,10 +600,15 @@ class ParasiteTree(BaseTree):
                 out.write('{p}{i:d}'.format(p=hpref, i=h))
             out.write('\n')
 
-def sanity_check(para_list, host_list):
+def sanity_check(para_list, host_list, non_empty_ranges=True):
     global GRID
     seen_p = set()
     seen_h = set()
+    if non_empty_ranges:
+        for h in host_list:
+            assert(len(h.geo_range) > 0)
+        for p in para_list:
+            assert(len(p.geo_range) > 0)
     for row in GRID.rows:
         for cell in row:
             hcs = set(cell._h2p.keys())
@@ -618,12 +631,13 @@ def sanity_check(para_list, host_list):
                         print 'h_set_from_p =', [i.__dict__ for i in h_set_from_p]
                         assert(h in h_set_from_p)
                     hcs_from_p.update(h_set_from_p)
-            if hcs_from_p != hcs:
+            parasitized_hcs = set([i for i in hcs if cell.get_para_for_host(i)])
+            if hcs_from_p != parasitized_hcs:
                 print 'cell =', cell.lat, cell.lon
                 print 'hcs_from_p =', hcs_from_p
-                print 'hcs =', hcs
+                print 'hcs =', parasitized_hcs
                 
-                assert(hcs_from_p == hcs)
+                assert(hcs_from_p == parasitized_hcs)
             if pcs_from_h != pcs:
                 print 'cell =', cell.lat, cell.lon
                 print pcs_from_h
@@ -651,14 +665,14 @@ def sanity_check(para_list, host_list):
                     t2.debug_write(errstream)
                     assert(t1._mrca_times[t2] == t2._mrca_times[t1])
 
-def SANITY_CHECK():
+def SANITY_CHECK(non_empty_ranges=True):
     global h_tree, p_tree, DOING_SANITY_CHECKS
     if not DOING_SANITY_CHECKS:
         return True
-    sanity_check(p_tree.tips, h_tree.tips)
+    sanity_check(p_tree.tips, h_tree.tips, non_empty_ranges)
 
 def main(h_rng, p_rng, num_hosts):
-    global GRID, _HOST_LINEAGE_COUNTER, _PARASITE_LINEAGE_COUNTER, CURR_TIME
+    global GRID, _HOST_LINEAGE_COUNTER, _PARASITE_LINEAGE_COUNTER, CURR_TIME, h_tree, p_tree
     CURR_TIME = 0
     GRID = Grid(GRID_LENGTH, GRID_LENGTH)
     _HOST_LINEAGE_COUNTER = 0
@@ -670,7 +684,9 @@ def main(h_rng, p_rng, num_hosts):
                                      rng=h_rng)
     h_tree = HostTree(start_time=0, initial_range=init_range, rng=h_rng)
     p_tree = ParasiteTree(start_time=0, initial_range=init_range, host=h_tree.root, rng=p_rng)
-
+    if not init_range:
+        return h_tree, p_tree
+        
     if DEBUGGING_OUTPUT:
         GRID.write_range(errstream, init_range)
     for CURR_TIME in range(1, max_t):
@@ -700,6 +716,7 @@ def main(h_rng, p_rng, num_hosts):
                 to_speciate = set(list(to_speciate)[:n_events])
             
         for h_l in to_speciate:
+            assert(len(h_l.geo_range) > 0)
             d1, d2 = h_tree.speciate(h_l)
             if False and print_ranges:
                 for t in h_tree.tips:
@@ -724,20 +741,20 @@ def main(h_rng, p_rng, num_hosts):
         #####   
         # Host range changes...
         gone_extinct = []
+        
         for t in h_tree.tips:
             t.disperse(h_tree.rng)
-            if not t.geo_range:
+            if len(t.geo_range) == 0:
                 gone_extinct.append(t)
         for t in gone_extinct:
             h_tree.go_extinct(t)
         if not h_tree.tips:
             break
         SANITY_CHECK()
-
         gone_extinct = []
         for p in p_tree.tips:
             p.disperse(p_tree.rng)
-            if not p.geo_range:
+            if len(p.geo_range) == 0:
                 gone_extinct.append(p)
         for p in gone_extinct:
             p_tree.go_extinct(p)
@@ -745,6 +762,7 @@ def main(h_rng, p_rng, num_hosts):
             break
         SANITY_CHECK()
     return h_tree, p_tree
+
 if __name__ == '__main__':
     from random import Random
     import sys
@@ -756,7 +774,10 @@ if __name__ == '__main__':
     p_seed = int(sys.argv[2])
     print h_seed, p_seed
 
-    NUM_HOSTS = 50
+    NUM_HOSTS = int(sys.argv[3])
+    MIN_NUM_PARA = int(sys.argv[4])
+    MAX_NUM_PARA = int(sys.argv[5])
+    
     # Tube is GRID_LENGTH on each side, and GRID_LENGTH top to bottom
     GRID_LENGTH = 64
 
@@ -786,7 +807,13 @@ if __name__ == '__main__':
                               p_rng,
                               num_hosts=NUM_HOSTS)
         if len(h_tree.tips) == NUM_HOSTS:
-            break
+            num_para = len(p_tree.tips)
+            if num_para < MIN_NUM_PARA:
+                warn('#para = {p:d} < {t:d}'.format(p=num_para, t=MIN_NUM_PARA))
+            elif num_para > MAX_NUM_PARA:
+                warn('#para = {p:d} > {t:d}'.format(p=num_para, t=MAX_NUM_PARA))
+            else:
+                break
 
     out = sys.stdout
     h_tree.newick(out, 'h')
