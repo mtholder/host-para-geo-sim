@@ -126,7 +126,6 @@ class Locality(object):
         old_para.geo_range.remove(self)
         new_para.geo_range.add(self)
 
-
     def set_neighbors(self, n):
         self._n_neighbor, self._e_neighbor, self._s_neighbor, self._w_neighbor = n
     def get_neighbors(self):
@@ -278,7 +277,6 @@ def find_surrounding(r):
                 s.setdefault(n, []).append(loc)
     return s
 
-
 _HOST_LINEAGE_COUNTER = 0
 _PARASITE_LINEAGE_COUNTER = 0
 
@@ -299,8 +297,6 @@ class BaseLineage(object):
             nd = ec[0]
             ec = [i for i in nd.children if i._on_extant_trace]
         return nd, ec
-
-
 
 class HostLineage(BaseLineage):
     def __init__(self, start_time, geo_range, parent=None):
@@ -547,7 +543,6 @@ class HostTree(BaseTree):
         for loc in dr:
             loc.add_para_for_h(dispersed_daughter, dispersed_parasite_load)
         return same_range_daughter, dispersed_daughter
-
 
 class ParasiteTree(BaseTree):
     def __init__(self, start_time, initial_range, host, rng):
