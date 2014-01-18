@@ -456,6 +456,7 @@ class BaseTree(object):
             if getattr(t, 'had_none_death_time', None):
                 delattr(t, 'had_none_death_time')
                 t.death_time = None
+
 class HostTree(BaseTree):
     def __init__(self, start_time, initial_range, rng):
         self.root = HostLineage(start_time, initial_range)
@@ -673,7 +674,10 @@ def main(h_rng, p_rng, num_hosts):
     if DEBUGGING_OUTPUT:
         GRID.write_range(errstream, init_range)
     for CURR_TIME in range(1, max_t):
-        CURR_TIME + len(h_tree.tips), len(p_tree.tips)
+        debug('t={t:d} #h={h:d} #p={p:d}'.format(
+                    t=CURR_TIME,
+                    h=len(h_tree.tips),
+                    p=len(p_tree.tips)))
         to_speciate = set()
         print_ranges = DEBUGGING_OUTPUT and (len(h_tree.tips) == 1)
         if print_ranges:
@@ -685,12 +689,16 @@ def main(h_rng, p_rng, num_hosts):
         for h_l in h_tree.tips:
             if h_rng.random() < H_SPECIATION_PROB:
                 to_speciate.add(h_l)
-        
         # It is not great to stop at the first time
         #   you were going to exceed the number of hosts, 
         #   but this should work for our purposes...
-        if len(to_speciate) and (len(h_tree.tips) == num_hosts):
-            break
+        if (len(to_speciate) > 0) and (len(h_tree.tips) + len(to_speciate) > num_hosts):
+            if len(h_tree.tips) == num_hosts:
+                break
+            if len(to_speciate) > 1:
+                n_events = num_hosts - len(h_tree.tips)
+                to_speciate = set(list(to_speciate)[:n_events])
+            
         for h_l in to_speciate:
             d1, d2 = h_tree.speciate(h_l)
             if False and print_ranges:
@@ -750,7 +758,7 @@ if __name__ == '__main__':
 
     NUM_HOSTS = 50
     # Tube is GRID_LENGTH on each side, and GRID_LENGTH top to bottom
-    GRID_LENGTH = 32
+    GRID_LENGTH = 64
 
     H_SPECIATION_PROB = 0.01
     H_LOCATION_EXTINCTION_PROB = 0.013
