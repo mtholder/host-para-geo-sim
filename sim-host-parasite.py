@@ -96,8 +96,9 @@ class Locality(object):
     def get_hosts_for_para(self, para):
         global _EMPTY_SET
         return  self._p2h.get(para, _EMPTY_SET)
-    def add_para_for_h(self, h, p_set):
+    def add_para_for_h_host_range_broken(self, h, p_set):
         old_p_set = self._h2p.setdefault(h, set())
+        #assert(self in h.geo_range)
         for p in p_set:
             if p not in old_p_set:
                 old_p_set.add(p)
@@ -335,7 +336,7 @@ class HostLineage(BaseLineage):
             for loc, src in added:
                 para = src.get_para_for_host(self)
                 if para is not None:
-                    loc.add_para_for_h(self, para)
+                    loc.add_para_for_h_host_range_broken(self, para)
             self.geo_range.update(set([i[0] for i in added]))
         SANITY_CHECK()
     def collect_para2range(self):
@@ -346,8 +347,13 @@ class HostLineage(BaseLineage):
                 pr.add(loc)
         return d
     def close_enough(self, h_set):
+        global host_infection_patristic_threshold, CURR_TIME
         if PHYLOGENETIC_HOST_JUMPS:
-            raise NotImplementedError('PHYLOGENETIC_HOST_JUMPS')
+            for h in h_set:
+                mrca_threshold = CURR_TIME - host_infection_patristic_threshold/2
+                if self._mrca_times[h] >= mrca_threshold:
+                    return True
+            return False
         else:
             return True
     def debug_write(self, out):
@@ -375,7 +381,7 @@ class ParasiteLineage(BaseLineage):
         if host is not None:
             ls = [self]
             for loc in geo_range:
-                loc.add_para_for_h(host, ls)
+                loc.add_para_for_h_host_range_broken(host, ls)
     def __str__(self):
         return 'ParasiteLineage.index={i:d}'.format(i=self.index)
     def get_full_range(self):
@@ -385,8 +391,8 @@ class ParasiteLineage(BaseLineage):
         for r in self.geo_range:
             hs.update(r.get_hosts_for_para(self))
         return hs
-    def disperse(self, rng):
-        global GRID, P_LOCATION_EXTINCTION_PROB, P_RANGE_EXPANSION_PROB, P_HOST_JUMP_PROB
+    def disperse(self, rng, tree):
+        global GRID, P_LOCATION_EXTINCTION_PROB, P_RANGE_EXPANSION_PROB, P_HOST_JUMP_PROB, P_SPECIATE_AT_HOST_JUMP
         to_del = []
         for loc in self.geo_range:
             for h in loc.get_hosts_for_para(self):
@@ -407,9 +413,10 @@ class ParasiteLineage(BaseLineage):
                         added.append((k, src_h))
         if added:
             for loc, src_h in added:
-                loc.add_para_for_h(src_h, [self])
+                loc.add_para_for_h_host_range_broken(src_h, [self])
             self.geo_range.update(set([i[0] for i in added]))
         
+        new_hosts = {}
         for loc in self.geo_range:
             h_set = set(loc._h2p.keys())
             o_h = loc._p2h[self]
@@ -418,7 +425,15 @@ class ParasiteLineage(BaseLineage):
                 close_enough_dest_host = [i for i in potential_dest if i.close_enough(o_h)]
                 for h in close_enough_dest_host:
                     if rng.random() < P_HOST_JUMP_PROB:
-                        loc.add_para_for_h(h, [self])
+                        new_hosts.setdefault(h, set()).add(loc)
+        para_parent = self
+        for h, d_geo_range in new_hosts.items():
+            if rng.random() < P_SPECIATE_AT_HOST_JUMP:
+                para_parent, n = tree._host_jump_speciate(para_parent, para_parent.geo_range, d_geo_range, [h])
+            else:
+                for loc in d_geo_range:
+                    loc.add_para_for_h_host_range_broken(h, [para_parent])
+            
         SANITY_CHECK(False)
 
 def _recurse_newick(out, nd, anc, name_pref):
@@ -541,7 +556,7 @@ class HostTree(BaseTree):
                                          geo_range=dr,
                                          parent=tip)
         for loc in dr:
-            loc.add_para_for_h(dispersed_daughter, dispersed_parasite_load)
+            loc.add_para_for_h_host_range_broken(dispersed_daughter, dispersed_parasite_load)
         return same_range_daughter, dispersed_daughter
 
 class ParasiteTree(BaseTree):
@@ -564,27 +579,48 @@ class ParasiteTree(BaseTree):
         occ_r1 = r - r2
         if (not occ_r1) or not r2:
             return parasite, None
+        return self._geo_speciate_across_hosts(parasite, occ_r1, r2)
+
+    def _geo_speciate_across_hosts(self, parasite, r1, r2):
         parasite.death_time = CURR_TIME
         d1 = ParasiteLineage(CURR_TIME, r1, host=None, parent=parasite)
         d2 = ParasiteLineage(CURR_TIME, r2, host=None, parent=parasite)
+        for loc in r1:
+            h_l = loc.get_hosts_for_para(parasite)
+            for h in h_l:
+                loc.replace_parasite(parasite, d1)
         for loc in r2:
             h_l = loc.get_hosts_for_para(parasite)
             for h in h_l:
                 loc.replace_parasite(parasite, d2)
-        for loc in occ_r1:
-            h_l = loc.get_hosts_for_para(parasite)
-            for h in h_l:
-                loc.replace_parasite(parasite, d1)
         self.tips.remove(parasite)
         self.tips.add(d1)
         self.tips.add(d2)
         return d1, d2
+
+    def _host_jump_speciate(self, parasite, r1, r2, h2):
+        parasite.death_time = CURR_TIME
+        d1 = ParasiteLineage(CURR_TIME, r1, host=None, parent=parasite)
+        d2 = ParasiteLineage(CURR_TIME, r2, host=None, parent=parasite)
+        for loc in set(r1):
+            h_l = loc.get_hosts_for_para(parasite)
+            for h in h_l:
+                loc.replace_parasite(parasite, d1)
+        for loc in set(r2):
+            for h in h2:
+                loc.add_para_for_h_host_range_broken(h, [d2])
+        self.tips.remove(parasite)
+        self.tips.add(d1)
+        self.tips.add(d2)
+        return d1, d2
+
     def go_extinct(self, tip):
         global CURR_TIME
         tip.death_time = CURR_TIME
         self.tips.remove(tip)
         for loc in tip.geo_range:
             loc.remove_parasite(tip)
+
     def associations(self, out, hpref, ppref):
         for t in self.tips:
             out.write('{p}{i:d}\t'.format(p=ppref, i=t.index))
@@ -743,7 +779,7 @@ def main(h_rng, p_rng, num_hosts):
         
         for t in h_tree.tips:
             t.disperse(h_tree.rng)
-            if len(t.geo_range) == 0:
+            if len(t.geo_range) == 0 and (t.death_time is None):
                 gone_extinct.append(t)
         for t in gone_extinct:
             h_tree.go_extinct(t)
@@ -751,9 +787,10 @@ def main(h_rng, p_rng, num_hosts):
             break
         SANITY_CHECK()
         gone_extinct = []
-        for p in p_tree.tips:
-            p.disperse(p_tree.rng)
-            if len(p.geo_range) == 0:
+        old_p_tips = list(p_tree.tips) # make a copy, because disperse can lead to speciation...
+        for p in old_p_tips:
+            p.disperse(p_tree.rng, p_tree)
+            if len(p.geo_range) == 0 and (p.death_time is None):
                 gone_extinct.append(p)
         for p in gone_extinct:
             p_tree.go_extinct(p)
@@ -814,10 +851,13 @@ if __name__ == '__main__':
         P_HOST_JUMP_PROB = parser.getfloat('parasite', 'new-host-infection-prob')
         assert(P_HOST_JUMP_PROB > 0.0)
         PHYLOGENETIC_HOST_JUMPS = parser.getboolean('parasite', 'new-host-depends-on-phylogeny')
+        host_infection_patristic_threshold = parser.getfloat('parasite', 'host-infection-patristic-threshold')
+        P_SPECIATE_AT_HOST_JUMP = parser.getfloat('parasite', 'speciate-on-new-host-infection-prob')
+        assert(P_SPECIATE_AT_HOST_JUMP > 0.0)
+        
     except Exception, x:
         import traceback
         xs = traceback.format_exc()
-        error('Exception: ' + xs)
         cfg_help='''Config file:
     The configfile should have the standard python config file syntax. 
     See the example at the top of
@@ -861,7 +901,7 @@ Usage:
   Warning messages are printed to stderr.
   The output is printed to stdout.
 
-''' + cfg_help)
+''' + cfg_help + '\n' + 'Error. Exception: ' + xs + '\n')
     print h_seed, p_seed
     DEBUGGING_OUTPUT = os.environ.get('DEBUGGING_OUTPUT', '0') != '0'
     DOING_SANITY_CHECKS = os.environ.get('SANITY_CHECKS', '0') != '0'
