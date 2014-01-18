@@ -49,9 +49,9 @@ class Locality(object):
             for h in oh:
                 ps = self._h2p[h]
                 ps.remove(p)
-                if not ps:
-                    del self._h2p[h]
-                    h.geo_range.remove(self)
+                #if not ps:
+                #    del self._h2p[h]
+                #    h.geo_range.remove(self)
     def _add_h_to_p2h(self, h, p_set):
         for p in p_set:
             ps = self._p2h.get(p)
@@ -701,13 +701,13 @@ def sanity_check(para_list, host_list, non_empty_ranges=True):
                     assert(t1._mrca_times[t2] == t2._mrca_times[t1])
 
 def SANITY_CHECK(non_empty_ranges=True):
-    global h_tree, p_tree, DOING_SANITY_CHECKS
-    if not DOING_SANITY_CHECKS:
+    global h_tree, p_tree, SANITY_CHECKS
+    if not SANITY_CHECKS:
         return True
     sanity_check(p_tree.tips, h_tree.tips, non_empty_ranges)
 
 def main(h_rng, p_rng, num_hosts):
-    global GRID, _HOST_LINEAGE_COUNTER, _PARASITE_LINEAGE_COUNTER, CURR_TIME, h_tree, p_tree
+    global GRID, _HOST_LINEAGE_COUNTER, _PARASITE_LINEAGE_COUNTER, CURR_TIME, h_tree, p_tree, P_RANGE_WIDE_EXTINCTION_PROB
     CURR_TIME = 0
     GRID = Grid(GRID_LENGTH, GRID_LENGTH)
     _HOST_LINEAGE_COUNTER = 0
@@ -779,19 +779,23 @@ def main(h_rng, p_rng, num_hosts):
         
         for t in h_tree.tips:
             t.disperse(h_tree.rng)
-            if len(t.geo_range) == 0 and (t.death_time is None):
+            if (not t.geo_range) and (t.death_time is None):
                 gone_extinct.append(t)
         for t in gone_extinct:
             h_tree.go_extinct(t)
         if not h_tree.tips:
             break
         SANITY_CHECK()
+        
         gone_extinct = []
         old_p_tips = list(p_tree.tips) # make a copy, because disperse can lead to speciation...
         for p in old_p_tips:
-            p.disperse(p_tree.rng, p_tree)
-            if len(p.geo_range) == 0 and (p.death_time is None):
+            if p_tree.rng.random() < P_RANGE_WIDE_EXTINCTION_PROB:
                 gone_extinct.append(p)
+            else:
+                p.disperse(p_tree.rng, p_tree)
+                if len(p.geo_range) == 0 and (p.death_time is None):
+                    gone_extinct.append(p)
         for p in gone_extinct:
             p_tree.go_extinct(p)
         if not p_tree.tips:
@@ -838,23 +842,25 @@ if __name__ == '__main__':
         H_SPECIATION_PROB = parser.getfloat('host', 'speciation-prob')
         assert(H_SPECIATION_PROB > 0.0)
         H_LOCATION_EXTINCTION_PROB = parser.getfloat('host', 'local-extinction-prob')
-        assert(H_LOCATION_EXTINCTION_PROB > 0.0)
+        assert(H_LOCATION_EXTINCTION_PROB >= 0.0)
         H_RANGE_EXPANSION_PROB = parser.getfloat('host', 'range-expansion-prob')
-        assert(H_RANGE_EXPANSION_PROB > 0.0)
+        assert(H_RANGE_EXPANSION_PROB >= 0.0)
         # Read parasite section
         H_PROB_PARA_SP_GIVEN_HOST_SP = parser.getfloat('parasite', 'speciation-prob-given-host-speciation')
-        assert(H_PROB_PARA_SP_GIVEN_HOST_SP > 0.0)
+        assert(H_PROB_PARA_SP_GIVEN_HOST_SP >= 0.0)
         P_LOCATION_EXTINCTION_PROB = parser.getfloat('parasite', 'local-extinction-prob')
-        assert(P_LOCATION_EXTINCTION_PROB > 0.0)
+        assert(P_LOCATION_EXTINCTION_PROB >= 0.0)
         P_RANGE_EXPANSION_PROB = parser.getfloat('parasite', 'range-expansion-prob')
-        assert(P_RANGE_EXPANSION_PROB > 0.0)
+        assert(P_RANGE_EXPANSION_PROB >= 0.0)
         P_HOST_JUMP_PROB = parser.getfloat('parasite', 'new-host-infection-prob')
-        assert(P_HOST_JUMP_PROB > 0.0)
+        assert(P_HOST_JUMP_PROB >= 0.0)
         PHYLOGENETIC_HOST_JUMPS = parser.getboolean('parasite', 'new-host-depends-on-phylogeny')
         host_infection_patristic_threshold = parser.getfloat('parasite', 'host-infection-patristic-threshold')
         P_SPECIATE_AT_HOST_JUMP = parser.getfloat('parasite', 'speciate-on-new-host-infection-prob')
-        assert(P_SPECIATE_AT_HOST_JUMP > 0.0)
-        
+        assert(P_SPECIATE_AT_HOST_JUMP >= 0.0)
+        P_RANGE_WIDE_EXTINCTION_PROB = parser.getfloat('parasite', 'range-wide-extinction-prob')
+        assert(P_RANGE_WIDE_EXTINCTION_PROB >= 0.0)
+
     except Exception, x:
         import traceback
         xs = traceback.format_exc()
@@ -904,7 +910,7 @@ Usage:
 ''' + cfg_help + '\n' + 'Error. Exception: ' + xs + '\n')
     print h_seed, p_seed
     DEBUGGING_OUTPUT = os.environ.get('DEBUGGING_OUTPUT', '0') != '0'
-    DOING_SANITY_CHECKS = os.environ.get('SANITY_CHECKS', '0') != '0'
+    SANITY_CHECKS = os.environ.get('SANITY_CHECKS', '0') != '0'
     h_rng = Random(h_seed)
     p_rng = Random(p_seed)
     while True:

@@ -62,8 +62,9 @@ def calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree):
 h_len = h_tree.length()
 p_tree.calc_node_ages()
 p_age = p_tree.seed_node.age
+tl_stats = []
 t0 = calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree)
-print 't0.00 =', t0/h_len
+tl_stats.append((0.0, t0))
 for nd in p_tree.postorder_node_iter():
     if nd.is_leaf():
         htl = taxon_p2h[nd.taxon]
@@ -73,17 +74,38 @@ for nd in p_tree.postorder_node_iter():
         for c in nd.child_nodes():
             nd.hts.update(c.hts)
 
-for i in range(1,10):
-    proportion = i/10.0
+n_quantiles = 100
+for i in range(1, n_quantiles):
+    proportion = i/float(n_quantiles)
     crit = proportion*p_age
     h_lists_list = []
     for e in p_tree.postorder_edge_iter():
         if e.head_node is not p_tree.seed_node:
             if (e.tail_node.age >= crit) and (e.head_node.age < crit):
                 h_lists_list.append(e.head_node.hts)
-    #h_lists_list=[h_taxa]
     tp = calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree)/h_len
-    print 't{p:3.2f} = {s:f}'.format(p=proportion, s=tp)
+    tl_stats.append((proportion, tp))
+
+h_lists_list=[p_tree.seed_node.hts]
+tmax = calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree)/h_len
+tl_stats.append((1.0, tmax))
+
+
+tr_stats = []
+for p, c in enumerate(p_tree.seed_node.child_nodes()):
+    h_lists_list=[c.hts]
+    tp = calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree)/h_len
+    tr_stats.append((p, tp))
+
+for p, tp in tl_stats:
+    print 't{p:3.2f} = {s:f}'.format(p=p, s=tp)
+for p, tp in tr_stats:
+    print 'tr{p:d} = {s:f}'.format(p=p, s=tp)
+for p, tp in tl_stats:
+    print 'r{p:3.2f} = {s:f}'.format(p=p, s=tp/tmax)
+for p, tp in tr_stats:
+    print 'rr{p:d} = {s:f}'.format(p=p, s=tp/tmax)
+
 
 
 # Calculator of some simple summary statistics that quantify the degree of 
