@@ -15,6 +15,10 @@ def warn(m):
         sys.stderr.write('warn: ')
         sys.stderr.write(m)
         sys.stderr.write('\n')
+def error(m):
+    sys.stderr.write('Error: ')
+    sys.stderr.write(m)
+    sys.stderr.write('\n')
 
 class Locality(object):
     def __init__(self, latitude, longitude):
@@ -768,7 +772,11 @@ if __name__ == '__main__':
     import sys
     import codecs
     import os
-        
+    try:
+        from ConfigParser import SafeConfigParser
+    except:
+        from configparser import SafeConfigParser
+    
     errstream = codecs.getwriter('utf-8')(sys.stderr)
     try:
         h_seed = int(sys.argv[1])
@@ -777,10 +785,59 @@ if __name__ == '__main__':
         MIN_NUM_PARA = int(sys.argv[4])
         MAX_NUM_PARA = int(sys.argv[5])
         if MIN_NUM_PARA > MAX_NUM_PARA:
-            warn('minimum # of parasites cannot be larger than maximum # parasites')
+            error('minimum # of parasites cannot be larger than maximum # parasites')
         assert(MIN_NUM_PARA <= MAX_NUM_PARA)
-    except:
-        sys.exit('''Error: expected 5 numbers as arguments
+        config_fp = sys.argv[6]
+        if not os.path.exists(config_fp):
+            error('Config file {f} does not exist'.format(f=config_fp))
+        assert(os.path.exists(config_fp))
+        parser = SafeConfigParser()
+        parser.read(config_fp)
+        # Read global section
+        # Tube is GRID_LENGTH on each side, and GRID_LENGTH top to bottom
+        GRID_LENGTH = parser.getint('global', 'grid-length')
+        assert(GRID_LENGTH > 0)
+        max_t = parser.getint('global', 'max-number-iterations')
+        assert(max_t > 0)
+        # Read host section
+        max_range_dim = parser.getint('host', 'max-init-range-width')
+        assert(max_range_dim > 0)
+        assert(max_range_dim <= GRID_LENGTH)
+        H_SPECIATION_PROB = parser.getfloat('host', 'speciation-prob')
+        assert(H_SPECIATION_PROB > 0.0)
+        H_LOCATION_EXTINCTION_PROB = parser.getfloat('host', 'local-extinction-prob')
+        assert(H_LOCATION_EXTINCTION_PROB > 0.0)
+        H_RANGE_EXPANSION_PROB = parser.getfloat('host', 'range-expansion-prob')
+        assert(H_RANGE_EXPANSION_PROB > 0.0)
+        # Read parasite section
+        H_PROB_PARA_SP_GIVEN_HOST_SP = parser.getfloat('parasite', 'speciation-prob-given-host-speciation')
+        assert(H_PROB_PARA_SP_GIVEN_HOST_SP > 0.0)
+        P_LOCATION_EXTINCTION_PROB = parser.getfloat('parasite', 'local-extinction-prob')
+        assert(P_LOCATION_EXTINCTION_PROB > 0.0)
+        P_RANGE_EXPANSION_PROB = parser.getfloat('parasite', 'range-expansion-prob')
+        assert(P_RANGE_EXPANSION_PROB > 0.0)
+        P_HOST_JUMP_PROB = parser.getfloat('parasite', 'new-host-infection-prob')
+        assert(P_HOST_JUMP_PROB > 0.0)
+        PHYLOGENETIC_HOST_JUMPS = parser.getboolean('parasite', 'new-host-depends-on-phylogeny')
+    except Exception, x:
+        import traceback
+        xs = traceback.format_exc()
+        error('Exception: ' + xs)
+        cfg_help='''Config file:
+    The configfile should have the standard python config file syntax. 
+    See the example at the top of
+        http://docs.python.org/release/2.7/library/configparser.html 
+    for details. For this program, the config should have:
+    A "global" section with the following fields:
+        "grid-length" int The width and height of the grid.
+    A "host" section with the following fields:
+        "speciation-prob" float Per time step probability of speciation for
+            each host lineage.
+            
+    
+    See example.cfg for and example.
+'''
+        sys.exit('''
     
 Program:
     sim-host-parasite.py  Copyright (C) 2014 Mark T. Holder mtholder@gmail.com
@@ -792,46 +849,29 @@ Prerequisites:
     None other than python 2 standard library. Tested on python 2.7
 
 Usage:
-    python <host-seed> <parasite-seed> <#-hosts> <min-#-para-sp> <max-#-para-sp>
+
+    python host-seed parasite-seed #-hosts min-#-para-sp max-#-para-sp configfile
+
   to simulate a host tree of #-hosts species using a rng with host-seed. A
   parasite tree will be simulated using parasite-seed. The simulations will be
   repeated until a realization produces a parasite tree with a number of species
-  between min-#-para-sp and max-#-para-sp
+  between min-#-para-sp and max-#-para-sp using the settings in configfile
+  to parameterize the details of the simulation
   
   For example:
-    python sim-host-parasite.py $RANDOM $RANDOM 50 40 45
+    python sim-host-parasite.py $RANDOM $RANDOM 50 40 45 example.cfg
   will produces a host tree of 50 species and a parasite tree with a number of
   tips in the interval [40, 45]
   
   Warning messages are printed to stderr.
   The output is printed to stdout.
-''')
+
+''' + cfg_help)
     print h_seed, p_seed
-
-    # Tube is GRID_LENGTH on each side, and GRID_LENGTH top to bottom
-    GRID_LENGTH = 64
-
-    H_SPECIATION_PROB = 0.01
-    H_LOCATION_EXTINCTION_PROB = 0.013
-    H_RANGE_EXPANSION_PROB = 0.003
-    H_PROB_PARA_SP_GIVEN_HOST_SP = 1.0 # Pr(parasite speciates | host speciates)
-    max_range_dim = 10
-    max_t = 10000
-
-    P_LOCATION_EXTINCTION_PROB = 0.01
-    P_RANGE_EXPANSION_PROB = 0.02
-    P_HOST_JUMP_PROB = 0.01
-
-    PHYLOGENETIC_HOST_JUMPS = False
-
     DEBUGGING_OUTPUT = os.environ.get('DEBUGGING_OUTPUT', '0') != '0'
     DOING_SANITY_CHECKS = os.environ.get('SANITY_CHECKS', '0') != '0'
-
-
     h_rng = Random(h_seed)
     p_rng = Random(p_seed)
-
-    
     while True:
         h_tree, p_tree = main(h_rng,
                               p_rng,
@@ -844,7 +884,6 @@ Usage:
                 warn('#para = {p:d} > {t:d}'.format(p=num_para, t=MAX_NUM_PARA))
             else:
                 break
-
     out = sys.stdout
     h_tree.newick(out, 'h')
     p_tree.newick(out, 'p')
