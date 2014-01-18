@@ -1,7 +1,24 @@
 #!/usr/bin/env python
 import sys
 import dendropy
+if len(sys.argv) < 2:
+    sys.exit('''Error: expected a filepath as the first (and only argument).
+    
+Program:
+    summary_stats.py  Copyright (C) 2014 Mark T. Holder mtholder@gmail.com
+    This program comes with ABSOLUTELY NO WARRANTY. See LICENSE.txt for details.
 
+    Calculator of some simple summary statistics that quantify the degree of 
+    host-parasite co-phylogeny. Parses the quirky output of sim-host-parasite.py
+    as its input.
+
+Prerequisites:
+    DendroPy
+
+Usage:
+    python summary_stats.py </path/to/output/of/sim-host-parasite.py>
+
+''')
 inpfn = sys.argv[1]
 inp = open(inpfn)
 lines = inp.readlines()
@@ -66,3 +83,22 @@ for i in range(1,10):
                 h_lists_list.append(e.head_node.hts)
     tp = calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree)/h_len
     print 't{p:3.2f} = {s:f}'.format(p=proportion, s=tp)
+
+
+# Calculator of some simple summary statistics that quantify the degree of 
+#   host-parasite co-phylogeny. Parses the quirky output of sim-host-parasite.py
+#   as its input.
+#   Copyright (C) 2014 Mark T. Holder mtholder@gmail.com
+# 
+#     This program is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+# 
+#     This program is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+# 
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>

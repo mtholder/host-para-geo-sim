@@ -768,16 +768,46 @@ if __name__ == '__main__':
     import sys
     import codecs
     import os
+        
     errstream = codecs.getwriter('utf-8')(sys.stderr)
+    try:
+        h_seed = int(sys.argv[1])
+        p_seed = int(sys.argv[2])    
+        NUM_HOSTS = int(sys.argv[3])
+        MIN_NUM_PARA = int(sys.argv[4])
+        MAX_NUM_PARA = int(sys.argv[5])
+        if MIN_NUM_PARA > MAX_NUM_PARA:
+            warn('minimum # of parasites cannot be larger than maximum # parasites')
+        assert(MIN_NUM_PARA <= MAX_NUM_PARA)
+    except:
+        sys.exit('''Error: expected 5 numbers as arguments
+    
+Program:
+    sim-host-parasite.py  Copyright (C) 2014 Mark T. Holder mtholder@gmail.com
+    This program comes with ABSOLUTELY NO WARRANTY. See LICENSE.txt for details.
 
-    h_seed = int(sys.argv[1])
-    p_seed = int(sys.argv[2])
+    Simple simulator host and parasite genealogies on a geographic grid
+
+Prerequisites:
+    None other than python 2 standard library. Tested on python 2.7
+
+Usage:
+    python <host-seed> <parasite-seed> <#-hosts> <min-#-para-sp> <max-#-para-sp>
+  to simulate a host tree of #-hosts species using a rng with host-seed. A
+  parasite tree will be simulated using parasite-seed. The simulations will be
+  repeated until a realization produces a parasite tree with a number of species
+  between min-#-para-sp and max-#-para-sp
+  
+  For example:
+    python sim-host-parasite.py $RANDOM $RANDOM 50 40 45
+  will produces a host tree of 50 species and a parasite tree with a number of
+  tips in the interval [40, 45]
+  
+  Warning messages are printed to stderr.
+  The output is printed to stdout.
+''')
     print h_seed, p_seed
 
-    NUM_HOSTS = int(sys.argv[3])
-    MIN_NUM_PARA = int(sys.argv[4])
-    MAX_NUM_PARA = int(sys.argv[5])
-    
     # Tube is GRID_LENGTH on each side, and GRID_LENGTH top to bottom
     GRID_LENGTH = 64
 
@@ -820,4 +850,18 @@ if __name__ == '__main__':
     p_tree.newick(out, 'p')
     p_tree.associations(out, 'h', 'p')
 
-
+# Simple simulator host and parasite genealogies on a geographic grid
+#   Copyright (C) 2014 Mark T. Holder mtholder@gmail.com
+# 
+#     This program is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+# 
+#     This program is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+# 
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>
