@@ -67,7 +67,7 @@ class Locality(object):
     def remove_host(self, h):
         self._remove_h_from_p2h(h)
         del self._h2p[h]
-    def remove_parasite(self, p):
+    def remove_parasite_broken_range(self, p):
         self._remove_p_from_h2p(p)
         if p in self._p2h:
             del self._p2h[p]
@@ -501,6 +501,11 @@ class HostTree(BaseTree):
         self.new_range_expansion_prob = 0.5 # used only in filling in new ranges. 
         self.prob_dispersal_speciation = 0.1 # Pr(dispersal speciation | speciation)
         self.rng = rng
+    def sample_rand_host_loc(self, rng):
+        h = rng.sample(self.tips, 1)[0]
+        loc = rng.sample(h.geo_range, 1)[0]
+        return h, loc
+
     def go_extinct(self, tip):
         global CURR_TIME
         tip.death_time = CURR_TIME
@@ -640,6 +645,21 @@ class ParasiteTree(BaseTree):
         if (not occ_r1) or not r2:
             return parasite, None
         return self._geo_speciate_across_hosts(parasite, occ_r1, r2)
+    def jump_speciate(self, parasite, h_tree):
+        h, loc = h_tree.sample_rand_host_loc(self.rng)
+        if loc in parasite.geo_range:
+            return parasite, None
+        parasite.death_time = CURR_TIME
+        d1 = ParasiteLineage(CURR_TIME, parasite.geo_range, host=None, parent=parasite)
+        d2 = ParasiteLineage(CURR_TIME, set([loc]), host=h, parent=parasite)
+        for loc in list(parasite.geo_range):
+            h_l = loc.get_hosts_for_para(parasite)
+            for h in h_l:
+                loc.replace_parasite(parasite, d1)
+        self.tips.remove(parasite)
+        self.tips.add(d1)
+        self.tips.add(d2)
+        return d1, d2
 
     def _geo_speciate_across_hosts(self, parasite, r1, r2):
         parasite.death_time = CURR_TIME
@@ -679,7 +699,7 @@ class ParasiteTree(BaseTree):
         tip.death_time = CURR_TIME
         self.tips.remove(tip)
         for loc in tip.geo_range:
-            loc.remove_parasite(tip)
+            loc.remove_parasite_broken_range(tip)
 
     def associations(self, out, hpref, ppref):
         for t in self.tips:
@@ -832,7 +852,7 @@ def main(h_rng, p_rng, num_hosts):
                         if (p1 is not None) and (p2 is not None):
                             p_tree.speciate(para_lineage, (d1, p1), (d2, p2))
                             SANITY_CHECK()
-                    
+        
         #####   
         # Host range changes...
         gone_extinct = []
@@ -854,12 +874,28 @@ def main(h_rng, p_rng, num_hosts):
                 gone_extinct.append(p)
             else:
                 p.disperse(p_tree.rng, p_tree)
-                if len(p.geo_range) == 0 and (p.death_time is None):
+                if (not p.geo_range) and (p.death_time is None):
                     gone_extinct.append(p)
+                if P_MAX_RANGE_IN_EFFECT:
+                    if len(p.geo_range) > P_MAX_RANGE:
+                        num_to_del = len(p.geo_range) - P_MAX_RANGE
+                        to_del =  p_tree.rng.sample(p.geo_range, num_to_del)
+                        for loc in to_del:
+                            loc.remove_parasite_broken_range(p)
+                            p.geo_range.remove(loc)
         for p in gone_extinct:
             p_tree.go_extinct(p)
         if not p_tree.tips:
             break
+        if P_LONG_DIST_PROB > 0.0:
+            tl = set(p_tree.tips)
+            for p in tl:
+                if p_tree.rng.random() < P_LONG_DIST_PROB:
+                    if p_tree.rng.random() < P_SP_ON_LONG_DIST_PROB:
+                        p_tree.jump_speciate(p, h_tree)
+                    else:
+                        h, loc = h_tree.sample_rand_host_loc(p_tree.rng)
+                        loc.add_para_for_h_host_range_broken(h, [p])
         if len(p_tree.tips) > (ABORT_P_TIPS_MULTIPLIER * MAX_NUM_PARA):
             break
         SANITY_CHECK()
@@ -929,6 +965,13 @@ if __name__ == '__main__':
         assert(P_RANGE_WIDE_EXTINCTION_PROB >= 0.0)
         P_MAX_RANGE = parser.getint('parasite', 'max-geo-range')
         assert(P_MAX_RANGE > 0)
+        P_MAX_RANGE_IN_EFFECT = (P_MAX_RANGE < (GRID_LENGTH*GRID_LENGTH))
+        P_LONG_DIST_PROB = parser.getfloat('parasite', 'long-dist-colonize-prob')
+        assert(P_LONG_DIST_PROB >= 0.0)
+        P_SP_ON_LONG_DIST_PROB = parser.getfloat('parasite', 'speciate-on-long-dist-colonize-prob')
+        assert(P_SP_ON_LONG_DIST_PROB >= 0.0)
+
+        
 
     except Exception, x:
         import traceback
