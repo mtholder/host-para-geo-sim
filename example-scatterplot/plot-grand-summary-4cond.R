@@ -17,17 +17,19 @@ plot(dc$V2, dc$V3,
         xlim=c(minx, maxx),
         ylim=c(miny, maxy),
         xlab="Proportion of host tree spanned",
-        ylab="Mean prop. of host tree spanned at 20% parasite tree depth")
-points(dn$V2, dn$V3, pch=4)
-points(dg$V2, dg$V3, pch=19)
-points(dr$V2, dr$V3, pch=5)
+        ylab="Mean prop. of host extent at 20% parasite tree depth",
+        cex=2)
+points(dn$V2, dn$V3, pch=17, cex=2)
+points(dg$V2, dg$V3, pch=19, cex=2)
+points(dr$V2, dr$V3, pch=0, cex=2)
 legend("topright",
         inset=0.01,
         title="Evolutionary Scenario",
         c(  "Co-phylogeny",
             "Non-phylogenetic host jumping",
             "Limited by parasite geographic dispersal",
-            "No co-speciation. High parastie extinction"),
-        pch=c(1, 4, 19, 5)
+            "No co-speciation. High parasite extinction"),
+        pch=c(1, 17, 19, 0),
+        pt.cex=c(2, 2, 2, 2)
         )
 dev.off()
