@@ -148,6 +148,7 @@ class Locality(object):
         return 'Locality({x:d}, {y:d})'.format(x=self.lon, y=self.lat)
 
 class Grid(object):
+    is_tube = False
     def __init__(self, width, height):
         assert(width > 0)
         assert(isinstance(width, int))
@@ -167,10 +168,18 @@ class Grid(object):
             for j in range(width):
                 north = self.rows[i - 1][j] if i > 0 else None
                 south = self.rows[i + 1][j] if i < (height -1) else None
-                e_ind = (j + 1) if j < (width - 1) else 0
-                w_ind = (j - 1) if j > 0 else (width -1)
-                east = self.rows[i][e_ind]
-                west = self.rows[i][w_ind]
+                if j < (width - 1):
+                    east = self.rows[i][j + 1]
+                elif Grid.is_tube:
+                    east = self.rows[i][0]
+                else:
+                    east = None
+                if j > 0:
+                    west = self.rows[i][j - 1]
+                elif Grid.is_tube:
+                    west = self.rows[i][width - 1]
+                else:
+                    west = None
                 locality = self.rows[i][j]
                 locality.neighbors = (north, east, south, west)
     def get(self, x, y):
@@ -182,8 +191,12 @@ class Grid(object):
         s_d = rng.randrange(max_ns_extent // 2)
         e_d = rng.randrange(max_ew_extent // 2)
         w_d = rng.randrange(max_ns_extent // 2)
-        max_x = c_x + e_d
-        min_x = c_x - w_d
+        if Grid.is_tube:
+            max_x = c_x + e_d
+            min_x = c_x - w_d
+        else:
+            max_x = min(c_x + e_d, self.width - 1)
+            min_x = max(c_x - w_d, 0)
         max_y = min(c_y + n_d, self.height - 1)
         min_y = max(c_y - s_d, 0)
         end_x = max_x + 1
@@ -523,7 +536,54 @@ class HostTree(BaseTree):
         if nc < 2:
             return tip, None
         debug('host-partition-range-speciate')
-        first_range = set(self.rng.sample(tip.geo_range, nc // 2))
+        if Grid.is_tube:
+            first_range = set(self.rng.sample(tip.geo_range, nc // 2))
+        else:
+            if self.rng.random() < 0.5:
+                # North/South vicariance
+                lat_list = [i.lat for i in tip.geo_range]
+                lat_list.sort()
+                mid_index = (1 + len(lat_list)) // 2
+                mid_lat = lat_list[mid_index]
+                below_list, above_list, mid_list = [], [], []
+                for loc in tip.geo_range:
+                    if loc.lat < mid_lat:
+                        below_list.append(loc)
+                    elif loc.lat > mid_lat:
+                        above_list.append(loc)
+                    else:
+                        mid_list.append(loc)
+            else:
+                # East/West vicariance
+                lon_list = [i.lon for i in tip.geo_range]
+                lon_list.sort()
+                mid_index = (1 + len(lon_list)) // 2
+                mid_lon = lon_list[mid_index]
+                below_list, above_list, mid_list = [], [], []
+                for loc in tip.geo_range:
+                    if loc.lon < mid_lon:
+                        below_list.append(loc)
+                    elif loc.lon > mid_lon:
+                        above_list.append(loc)
+                    else:
+                        mid_list.append(loc)
+            diff = len(below_list) - len(above_list)
+            ms = min(abs(diff), len(mid_list))
+            if ms > 0:
+                to_transfer = []
+                for i in range(ms):
+                    to_transfer.append(mid_list.pop())
+                if diff < 0:
+                    below_list.extend(to_transfer)
+                else:
+                    above_list.extend(to_transfer)
+            to_above, to_below = [], []
+            if mid_list:
+                to_above = set(self.rng.sample(mid_list, len(mid_list) // 2))
+                to_below = list(set(mid_list) - to_above)
+                to_above = list(to_above)
+            above_list.extend(to_above)
+            first_range = set(above_list)
         second_range = tip.geo_range - first_range
         first_daughter = HostLineage(start_time=CURR_TIME,
                                      geo_range=first_range,
@@ -753,7 +813,7 @@ def main(h_rng, p_rng, num_hosts):
         for h_l in to_speciate:
             assert(len(h_l.geo_range) > 0)
             d1, d2 = h_tree.speciate(h_l)
-            if False and print_ranges:
+            if print_ranges:
                 for t in h_tree.tips:
                     errstream.write('After speciation\n')
                     GRID.write_range(errstream, t.geo_range)
@@ -867,6 +927,8 @@ if __name__ == '__main__':
         assert(P_SPECIATE_AT_HOST_JUMP >= 0.0)
         P_RANGE_WIDE_EXTINCTION_PROB = parser.getfloat('parasite', 'range-wide-extinction-prob')
         assert(P_RANGE_WIDE_EXTINCTION_PROB >= 0.0)
+        P_MAX_RANGE = parser.getint('parasite', 'max-geo-range')
+        assert(P_MAX_RANGE > 0)
 
     except Exception, x:
         import traceback
