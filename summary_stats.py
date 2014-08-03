@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 import dendropy
+import os
 if len(sys.argv) < 2:
     sys.exit('''Error: expected a filepath as the first (and only argument).
     
@@ -19,6 +20,7 @@ Usage:
     python summary_stats.py </path/to/output/of/sim-host-parasite.py>
 
 ''')
+PRUNING_SINGLE_OUTGROUP = os.environ.get('PRUNING_SINGLE_OUTGROUP', '0') == '1' # should make this more flexible for >1 outgroup...
 inpfn = sys.argv[1]
 inp = open(inpfn)
 lines = inp.readlines()
@@ -35,10 +37,36 @@ h_taxa = dendropy.TaxonSet()
 h_tree = dendropy.Tree.get_from_string(h_newick, schema='newick', taxon_set=h_taxa)
 p_taxa = dendropy.TaxonSet()
 p_tree = dendropy.Tree.get_from_string(p_newick, schema='newick', taxon_set=p_taxa)
+if PRUNING_SINGLE_OUTGROUP:
+    for tree_taxa in [(h_tree, h_taxa), (p_tree, p_taxa)]:
+        _tree, _taxa = tree_taxa
+        print _tree
+        _r = _tree.seed_node
+        _c = _r.child_nodes()
+        assert len(_c) == 2
+        _ingroup, _outgroup = _c
+        if _c[1].child_nodes():
+            assert not _c[0].child_nodes()
+            _outgroup, _ingroup = _c
+        else:
+            assert _c[0].child_nodes()
+        _outgroup = _outgroup.taxon
+        _tree.seed_node = _ingroup
+        _ingroup.edge.tail_node = None
+        _ingroup.edge.length = 0.0
+        _ingroup.edge.rootedge = True
+        _oind = None
+        for n, t in enumerate(_taxa):
+            if t is _outgroup:
+                _oind = n
+                break
+        assert _oind is not None
+        del _taxa[_oind]
+        print _tree
 h_lists_list = []
 taxon_p2h = {}
 for k, v in p2h.items():
-    val_list = [h_taxa.get_taxon(label=i) for i in v]
+    val_list = [h_taxa.get_taxon(label=i) for i in v if h_taxa.get_taxon(label=i) is not None]
     h_lists_list.append(val_list)
     taxon_p2h[p_taxa.get_taxon(label=k)] = val_list
 
@@ -60,7 +88,7 @@ def calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree):
     return t0/c
 
 h_len = h_tree.length()
-p_tree.calc_node_ages()
+p_tree.calc_node_ages(check_prec=0.00001)
 p_age = p_tree.seed_node.age
 tl_stats = []
 t0 = calculate_mean_sum_of_tree_length_covered(h_lists_list, h_tree)
