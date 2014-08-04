@@ -1,0 +1,3 @@
+Calliobothrium 1.000000 0.155447
+Acanthobothrium 0.971978 0.022984
+Dollfusiella 0.977521 0.181201
