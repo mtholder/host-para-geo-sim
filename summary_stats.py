@@ -21,6 +21,8 @@ Usage:
 
 ''')
 PRUNING_SINGLE_OUTGROUP = os.environ.get('PRUNING_SINGLE_OUTGROUP', '0') == '1' # should make this more flexible for >1 outgroup...
+REVERSE_MAPPING = os.environ.get('REVERSE_MAPPING', '0') == '1' # should make this more flexible for >1 outgroup...
+sys.stderr.write('PRUNING_SINGLE_OUTGROUP = {}, REVERSE_MAPPING={}\n'.format(PRUNING_SINGLE_OUTGROUP, REVERSE_MAPPING))
 inpfn = sys.argv[1]
 inp = open(inpfn)
 lines = inp.readlines()
@@ -63,6 +65,18 @@ if PRUNING_SINGLE_OUTGROUP:
         assert _oind is not None
         del _taxa[_oind]
         print _tree
+if REVERSE_MAPPING:
+    h2p = {}
+    for h in h_taxa:
+        h2p[h.label] = []
+    h_tree, p_tree = p_tree, h_tree
+    h_taxa, p_taxa = p_taxa, h_taxa
+    for k, v in p2h.items():
+        for h in v:
+            if h in h2p:
+                h2p[h].append(k)
+    p2h = h2p
+    del h2p
 h_lists_list = []
 taxon_p2h = {}
 for k, v in p2h.items():
